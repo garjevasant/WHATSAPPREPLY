@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>WhatsReply Server UI</title>
+  <style>
+    :root { --green:#128c7e; --dark:#12312e; --mint:#e9f8f2; --bg:#f4f8f6; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:Inter,Segoe UI,Arial,sans-serif; background:var(--bg); color:#18322f; }
+    header { background:linear-gradient(135deg,#128c7e,#075e54); color:white; padding:28px 20px; }
+    header .wrap, main { max-width:1100px; margin:auto; }
+    h1 { margin:0 0 6px; font-size:clamp(24px,5vw,38px); }
+    header p { margin:0; opacity:.88; }
+    main { padding:22px 16px 40px; }
+    .toolbar { display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-bottom:18px; }
+    .status { display:flex; gap:8px; align-items:center; color:#52726c; font-size:14px; }
+    .dot { width:10px; height:10px; background:#25c26e; border-radius:50%; }
+    button { border:0; border-radius:10px; padding:11px 16px; background:var(--green); color:white; font-weight:600; cursor:pointer; }
+    button.secondary { background:white; color:var(--green); border:1px solid #c8e2db; }
+    button.danger { color:#b42318; border-color:#f0c8c4; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:14px; }
+    .card { background:white; border:1px solid #dfebe7; border-radius:16px; padding:18px; box-shadow:0 5px 18px #0b51420d; }
+    .card h2 { margin:0 0 14px; font-size:18px; }
+    .stat { font-size:32px; font-weight:700; color:var(--green); }
+    .logs { margin-top:18px; display:grid; gap:12px; }
+    .log { background:white; border:1px solid #dfebe7; border-radius:14px; padding:16px; }
+    .log-top { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; color:#53716b; font-size:13px; }
+    .sender { color:var(--dark); font-weight:700; font-size:17px; }
+    .label { color:#718b85; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; margin-top:13px; }
+    .question { color:#314d48; }
+    .reply { color:var(--green); font-weight:600; }
+    .chat-log { margin-top:18px; display:grid; gap:12px; }
+    .chat-message { border-left:4px solid #8bb9ad; }
+    .chat-question { background:#f1f7f5; border-radius:12px; padding:12px; color:#314d48; }
+    .chat-answer { background:#d9f5e9; border-radius:12px; padding:12px; color:#075e54; margin-top:8px; font-weight:600; }
+    .empty { text-align:center; color:#718b85; padding:38px 12px; }
+    @media (max-width:600px) { .toolbar { align-items:stretch; } button { width:100%; } }
+  </style>
+</head>
+<body>
+  <header><div class="wrap"><h1>WhatsReply Server UI</h1><p>Local Ollama auto-reply history dashboard</p></div></header>
+  <main>
+    <div class="toolbar">
+      <div class="status"><span class="dot"></span><span id="status">Connecting to local server...</span></div>
+      <div><button class="secondary" onclick="loadLogs()">Refresh</button> <button class="secondary danger" onclick="clearLogs()">Clear history</button></div>
+    </div>
+    <div class="grid">
+      <div class="card"><h2>Total auto-replies</h2><div class="stat" id="count">0</div></div>
+      <div class="card"><h2>Storage</h2><div>SQLite database<br><small>server_ui/whatsapp_history.sqlite3</small></div></div>
+      <div class="card"><h2>Connection</h2><div>Listening on port <strong>8765</strong><br><small>Accessible over Tailscale</small></div></div>
+    </div>
+    <div class="card" style="margin-top:14px"><h2>Mobile device sync</h2><div id="devices"><span class="status"><span class="dot"></span>Waiting for mobile heartbeat...</span></div></div>
+    <div class="toolbar" style="margin-top:22px;margin-bottom:10px">
+      <h2 style="margin:0">Mobile AI Chat</h2>
+      <button class="secondary" onclick="loadChat()">Refresh chat</button>
+    </div>
+    <div class="chat-log" id="chat"><div class="card empty">No mobile chat messages yet.</div></div>
+    <div class="toolbar" style="margin-top:22px;margin-bottom:10px">
+      <h2 style="margin:0">WhatsApp auto-replies</h2>
+    </div>
+    <div class="logs" id="logs"><div class="card empty">No auto-replies received yet.</div></div>
+  </main>
+  <script>
+    const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const date = value => { const d = new Date(value); return Number.isNaN(d.valueOf()) ? value : d.toLocaleString(); };
+    async function loadLogs() {
+      try {
+        const response = await fetch('/api/logs');
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const logs = await response.json();
+        document.getElementById('status').textContent = 'Server connected';
+        document.getElementById('count').textContent = logs.length;
+        document.getElementById('logs').innerHTML = logs.length ? logs.map(log => `<article class="log"><div class="log-top"><span class="sender">${esc(log.sender)}</span><span>${esc(date(log.timestamp))}</span></div><div class="label">Incoming message</div><div class="question">${esc(log.incoming)}</div><div class="label">AI reply sent</div><div class="reply">${esc(log.reply)}</div></article>`).join('') : '<div class="card empty">No auto-replies received yet.</div>';
+      } catch (error) { document.getElementById('status').textContent = 'Server unavailable'; }
+    }
+    async function loadDevices() {
+      try {
+        const response = await fetch('/api/devices');
+        const devices = await response.json();
+        const now = Date.now();
+        document.getElementById('devices').innerHTML = devices.length ? devices.map(device => {
+          const seen = new Date(device.last_seen).getTime();
+          const connected = Number.isFinite(seen) && now - seen < 30000;
+          return `<div class="status"><span class="dot" style="background:${connected ? '#25c26e' : '#a7b6b2'}"></span><strong>${esc(device.device_name)}</strong> — ${connected ? 'Mobile connected' : 'Mobile disconnected'} · Last seen ${esc(date(device.last_seen))}</div>`;
+        }).join('') : '<span class="status"><span class="dot" style="background:#a7b6b2"></span>Mobile not connected yet</span>';
+      } catch (_) { document.getElementById('devices').textContent = 'Unable to read mobile status'; }
+    }
+    async function loadChat() {
+      try {
+        const response = await fetch('/api/chat');
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const chats = await response.json();
+        document.getElementById('chat').innerHTML = chats.length ? chats.map(chat => `<article class="card chat-message"><div class="log-top"><span class="sender">${esc(chat.device_name || 'WhatsReply Android')}</span><span>${esc(date(chat.timestamp))}</span></div><div class="label">You asked</div><div class="chat-question">${esc(chat.user_message)}</div><div class="label">Local Ollama replied</div><div class="chat-answer">${esc(chat.ai_reply)}</div></article>`).join('') : '<div class="card empty">No mobile chat messages yet.</div>';
+      } catch (_) { document.getElementById('chat').innerHTML = '<div class="card empty">Unable to read mobile chat.</div>'; }
+    }
+    async function clearLogs() { if (!confirm('Clear all server history?')) return; await fetch('/api/logs', {method:'DELETE'}); loadLogs(); }
+    loadLogs(); loadChat(); loadDevices(); setInterval(() => { loadLogs(); loadChat(); loadDevices(); }, 10000);
+  </script>
+</body>
+</html>
